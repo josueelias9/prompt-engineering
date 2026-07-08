@@ -1,0 +1,59 @@
+services:
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend-container
+    ports:
+      - "${STREAMLIT_PORT:-8501}:8501"
+    environment:
+      - OLLAMA_HOST=${LLM_HOST}
+      - LLM_MODEL=${LLM_MODEL}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+
+  
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-container
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # One-shot container: pulls required models and exits.
+  # Re-runs are instant because models are cached in ollama_data volume.
+  ollama-init:
+    container_name: ollama-init-container
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=${LLM_HOST}
+    entrypoint: ["/bin/sh", "-c", "ollama pull ${LLM_MODEL} && ollama pull ${EMBEDDING_MODEL}"]
+    restart: "no"
+
+
+
+
+volumes:
+  ollama_data:
